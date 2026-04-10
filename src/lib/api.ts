@@ -9,7 +9,7 @@ export interface StaffScheduleDay {
   dayOfWeek: number;   // 0=Sun … 6=Sat
   startTime: string;   // "09:00"
   endTime: string;     // "18:00"
-  isActive: boolean;
+  isWorking: boolean;  // backend field name from WorkingHoursEntity
 }
 
 export interface PublicStaff {
@@ -35,7 +35,7 @@ export interface ConsultaPayload {
 const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 export function formatSchedule(schedule: StaffScheduleDay[]): string {
-  const active = schedule.filter(d => d.isActive);
+  const active = schedule.filter(d => d.isWorking);
   if (!active.length) return 'Sin horario';
   const days = active.map(d => DAY_NAMES[d.dayOfWeek]).join(', ');
   const first = active[0];

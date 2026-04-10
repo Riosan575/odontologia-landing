@@ -242,7 +242,7 @@ function BookingModal({
 
 // ─── Staff Card ───────────────────────────────────────────────────────────────
 function StaffCard({ member, onBook }: { member: PublicStaff; onBook: (s: PublicStaff) => void }) {
-  const activeDays = member.schedule.filter(d => d.isActive);
+  const activeDays = member.schedule.filter(d => d.isWorking);
   return (
     <div className="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col gap-4">
       <div className="flex items-start gap-4">
