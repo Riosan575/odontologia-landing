@@ -3,36 +3,383 @@
 import { useEffect, useState } from 'react';
 import {
   Calendar, Clock, Phone, Star, CheckCircle,
-  Loader2, Shield, Award, Smile,
+  Loader2, Shield, Award, Smile, ChevronLeft, X, Check,
 } from 'lucide-react';
 import {
-  fetchStaff, formatSchedule,
-  TENANT_ID, type PublicStaff,
+  fetchStaff, fetchStaffServices, fetchAvailability, createBooking,
+  formatSchedule, fmtTime,
+  TENANT_ID,
+  type PublicStaff, type PublicService, type AvailabilitySlot,
 } from '@/lib/api';
 
-// ─── Staff Avatar ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function fmtDuration(mins: number) {
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h}h ${m}min` : h ? `${h}h` : `${m}min`;
+}
+
+function dateLabel(d: string) {
+  return new Date(d + 'T12:00:00').toLocaleDateString('es-PE', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
 function Avatar({ staff, size = 'md' }: { staff: PublicStaff; size?: 'sm' | 'md' | 'lg' }) {
   const dim = size === 'lg' ? 'w-24 h-24 text-3xl' : size === 'md' ? 'w-16 h-16 text-xl' : 'w-10 h-10 text-sm';
-  if (staff.avatar) {
-    return <img src={staff.avatar} alt={staff.fullName} className={`${dim} rounded-full object-cover flex-shrink-0`} />;
-  }
+  if (staff.avatar) return <img src={staff.avatar} alt={staff.fullName} className={`${dim} rounded-full object-cover flex-shrink-0`} />;
   return (
-    <div
-      className={`${dim} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0`}
-      style={{ background: staff.color || '#1976D2' }}
-    >
+    <div className={`${dim} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0`}
+      style={{ background: staff.color || '#1976D2' }}>
       {staff.fullName.charAt(0)}
     </div>
   );
 }
 
+// ─── Booking Modal ────────────────────────────────────────────────────────────
+type Step = 'service' | 'date' | 'time' | 'form' | 'confirm';
+
+interface BookingState {
+  service: PublicService | null;
+  date: string;
+  slot: AvailabilitySlot | null;
+  name: string;
+  dni: string;
+  phone: string;
+  email: string;
+  notes: string;
+}
+
+function BookingModal({ staff, onClose }: { staff: PublicStaff; onClose: () => void }) {
+  const [step, setStep] = useState<Step>('service');
+  const [services, setServices] = useState<PublicService[]>([]);
+  const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
+  const [loadingSvc, setLoadingSvc] = useState(true);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState('');
+  const [slotTaken, setSlotTaken] = useState(false);
+
+  const today = new Date().toISOString().split('T')[0];
+
+  // Available dates from staff schedule (today onwards)
+  const availableDates = [...new Set(staff.schedule.map(s => s.date))]
+    .filter(d => d >= today).sort();
+
+  const [booking, setBooking] = useState<BookingState>({
+    service: null, date: availableDates[0] ?? today,
+    slot: null, name: '', dni: '', phone: '', email: '', notes: '',
+  });
+
+  useEffect(() => {
+    fetchStaffServices(staff.id)
+      .then(setServices)
+      .catch(() => setServices([]))
+      .finally(() => setLoadingSvc(false));
+  }, [staff.id]);
+
+  // Re-fetch slots every time we enter the time step (including going back),
+  // then keep polling every 15 s so stale slots disappear in real-time.
+  useEffect(() => {
+    if (step !== 'time' || !booking.service || !booking.date) return;
+
+    let cancelled = false;
+
+    const load = (showSpinner: boolean) => {
+      if (showSpinner) setLoadingSlots(true);
+      fetchAvailability(staff.id, booking.service!.id, booking.date)
+        .then(slots => { if (!cancelled) setAvailability(slots); })
+        .catch(() => { if (!cancelled) setAvailability([]); })
+        .finally(() => { if (!cancelled && showSpinner) setLoadingSlots(false); });
+    };
+
+    load(true);
+    const interval = setInterval(() => load(false), 15_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, staff.id, booking.date, booking.service?.id]);
+
+  const selectService = (svc: PublicService) => {
+    setBooking(b => ({ ...b, service: svc, slot: null }));
+    setStep('date');
+  };
+
+  const selectDate = (date: string) => {
+    setBooking(b => ({ ...b, date, slot: null }));
+    setSlotTaken(false);
+    setStep('time');
+    // actual fetch is triggered by the useEffect above
+  };
+
+  const selectSlot = (slot: AvailabilitySlot) => {
+    setBooking(b => ({ ...b, slot }));
+    setSlotTaken(false);
+    setStep('form');
+  };
+
+  const handleSubmit = async () => {
+    if (!booking.service || !booking.slot || !booking.name || !booking.phone) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await createBooking({
+        staffId: staff.id,
+        serviceId: booking.service.id,
+        date: booking.date,
+        startTime: booking.slot.startTime,
+        customerName: booking.name,
+        customerDni: booking.dni,
+        customerPhone: booking.phone,
+        customerEmail: booking.email || undefined,
+        notes: booking.notes || undefined,
+      });
+      setDone(true);
+    } catch (e: any) {
+      const msg: string = e?.response?.data?.message ?? '';
+      const isConflict = e?.response?.status === 409 || msg.toLowerCase().includes('completo') || msg.toLowerCase().includes('conflict');
+      if (isConflict) {
+        // Slot was taken by someone else — go back to time picker and refresh
+        setSlotTaken(true);
+        setBooking(b => ({ ...b, slot: null }));
+        setStep('time');
+      } else {
+        setError(msg || 'Error al reservar. Intente de nuevo.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const stepBack: Record<Step, Step | null> = {
+    service: null, date: 'service', time: 'date', form: 'time', confirm: null,
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full sm:rounded-2xl sm:max-w-md max-h-[95vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center gap-3 p-5 border-b border-slate-100 flex-shrink-0">
+          {!done && stepBack[step] && (
+            <button onClick={() => setStep(stepBack[step]!)} className="p-1.5 hover:bg-slate-100 rounded-lg">
+              <ChevronLeft className="w-5 h-5 text-slate-500" />
+            </button>
+          )}
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <Avatar staff={staff} size="sm" />
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-900 text-sm truncate">{staff.fullName}</p>
+              {staff.specialization && <p className="text-xs text-slate-500 truncate">{staff.specialization}</p>}
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg flex-shrink-0">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-y-auto flex-1 p-5">
+
+          {/* ── Done ── */}
+          {done && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-8 h-8 text-teal-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">¡Reserva confirmada!</h3>
+              <p className="text-slate-500 text-sm mb-6">
+                Te esperamos el <span className="font-semibold text-slate-700 capitalize">{dateLabel(booking.date)}</span> a las{' '}
+                <span className="font-semibold text-slate-700">{fmtTime(booking.slot!.startTime)}</span>.
+              </p>
+              <div className="bg-slate-50 rounded-xl p-4 text-left text-sm space-y-2 mb-6">
+                <div className="flex justify-between"><span className="text-slate-500">Servicio</span><span className="font-medium text-slate-800">{booking.service?.name}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Profesional</span><span className="font-medium text-slate-800">{staff.fullName}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Duración</span><span className="font-medium text-slate-800">{fmtDuration(booking.service!.durationMinutes)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Precio</span><span className="font-medium text-slate-800">S/ {Number(booking.service!.price).toFixed(2)}</span></div>
+              </div>
+              <button onClick={onClose} className="w-full py-3 bg-teal-500 text-white rounded-xl font-semibold hover:bg-teal-600 transition-colors">
+                Cerrar
+              </button>
+            </div>
+          )}
+
+          {/* ── Step: service ── */}
+          {!done && step === 'service' && (
+            <div>
+              <h3 className="font-bold text-slate-900 text-lg mb-1">¿Qué servicio necesitas?</h3>
+              <p className="text-sm text-slate-500 mb-4">Selecciona el tratamiento</p>
+              {loadingSvc ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-teal-500" /></div>
+              ) : services.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-8">Este profesional no tiene servicios disponibles</p>
+              ) : (
+                <div className="space-y-2">
+                  {services.map(svc => (
+                    <button key={svc.id} onClick={() => selectService(svc)}
+                      className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-teal-300 hover:bg-teal-50/40 transition-all text-left group">
+                      <div className="flex items-center gap-3">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: svc.color || '#14b8a6' }} />
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm group-hover:text-teal-700">{svc.name}</p>
+                          {svc.description && <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{svc.description}</p>}
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0 ml-3">
+                        <p className="text-sm font-bold text-slate-900">S/ {Number(svc.price).toFixed(2)}</p>
+                        <p className="text-xs text-slate-400">{fmtDuration(svc.durationMinutes)}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step: date ── */}
+          {!done && step === 'date' && (
+            <div>
+              <h3 className="font-bold text-slate-900 text-lg mb-1">¿Qué día prefieres?</h3>
+              <p className="text-sm text-slate-500 mb-4">Días con disponibilidad</p>
+              {availableDates.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-8">Sin fechas disponibles próximamente</p>
+              ) : (
+                <div className="space-y-2">
+                  {availableDates.map(d => {
+                    const daySlots = staff.schedule.filter(s => s.date === d).sort((a, b) => a.startTime.localeCompare(b.startTime));
+                    const label = new Date(d + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' });
+                    return (
+                      <button key={d} onClick={() => selectDate(d)}
+                        className="w-full flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:border-teal-300 hover:bg-teal-50/40 transition-all text-left">
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm capitalize">{label}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {daySlots.map(s => `${fmtTime(s.startTime)}–${fmtTime(s.endTime)}`).join(' · ')}
+                          </p>
+                        </div>
+                        <ChevronLeft className="w-4 h-4 text-slate-400 rotate-180" />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step: time ── */}
+          {!done && step === 'time' && (
+            <div>
+              <h3 className="font-bold text-slate-900 text-lg mb-1">Elige tu horario</h3>
+              <p className="text-sm text-slate-500 mb-4 capitalize">{dateLabel(booking.date)}</p>
+              {slotTaken && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2.5 text-xs mb-4">
+                  <span className="mt-0.5">⚠️</span>
+                  <span>Ese horario ya fue reservado por otra persona. Por favor elige otro.</span>
+                </div>
+              )}
+              {loadingSlots ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-teal-500" /></div>
+              ) : availability.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-8">No hay horarios disponibles para este día</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {availability.map((slot, i) => {
+                    const pct = slot.available / slot.total;
+                    const urgency = pct <= 0.25 ? 'text-red-500' : pct <= 0.5 ? 'text-amber-500' : 'text-teal-600';
+                    return (
+                      <button key={i} onClick={() => selectSlot(slot)}
+                        className="flex flex-col items-center p-3 border border-slate-200 rounded-xl hover:border-teal-400 hover:bg-teal-50 transition-all">
+                        <span className="font-bold text-slate-900 text-sm">{fmtTime(slot.startTime)}</span>
+                        {slot.total > 1 && (
+                          <span className={`text-xs mt-0.5 font-medium ${urgency}`}>
+                            {slot.available === 1 ? 'Último lugar' : `${slot.available} lugares`}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step: form ── */}
+          {!done && step === 'form' && (
+            <div>
+              <h3 className="font-bold text-slate-900 text-lg mb-1">Tus datos</h3>
+              <p className="text-sm text-slate-500 mb-4">Para confirmar tu reserva</p>
+
+              {/* Summary pill */}
+              <div className="bg-teal-50 border border-teal-100 rounded-xl p-3 mb-4 flex items-center justify-between text-sm">
+                <div>
+                  <p className="font-semibold text-teal-800">{booking.service?.name}</p>
+                  <p className="text-teal-600 text-xs capitalize">{dateLabel(booking.date)} · {fmtTime(booking.slot!.startTime)}</p>
+                </div>
+                <p className="font-bold text-teal-700">S/ {Number(booking.service!.price).toFixed(2)}</p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nombre completo *</label>
+                  <input type="text" value={booking.name} autoFocus
+                    onChange={e => setBooking(b => ({ ...b, name: e.target.value }))}
+                    placeholder="Juan Pérez"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">DNI *</label>
+                  <input type="text" value={booking.dni} maxLength={8}
+                    onChange={e => setBooking(b => ({ ...b, dni: e.target.value.replace(/\D/g, '') }))}
+                    placeholder="12345678"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Teléfono *</label>
+                  <input type="tel" value={booking.phone}
+                    onChange={e => setBooking(b => ({ ...b, phone: e.target.value }))}
+                    placeholder="+51 999 999 999"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Correo electrónico <span className="text-slate-400 font-normal">(opcional)</span></label>
+                  <input type="email" value={booking.email}
+                    onChange={e => setBooking(b => ({ ...b, email: e.target.value }))}
+                    placeholder="juan@email.com"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+              </div>
+
+              {error && <p className="text-xs text-red-500 mt-3">{error}</p>}
+            </div>
+          )}
+        </div>
+
+        {/* Footer CTA */}
+        {!done && step === 'form' && (
+          <div className="p-5 border-t border-slate-100 flex-shrink-0">
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !booking.name || !booking.dni || !booking.phone}
+              className="w-full py-3 bg-teal-500 text-white rounded-xl font-semibold hover:bg-teal-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {submitting ? 'Reservando...' : 'Confirmar reserva'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Staff Card ───────────────────────────────────────────────────────────────
-function StaffCard({ member }: { member: PublicStaff }) {
+function StaffCard({ member, onBook }: { member: PublicStaff; onBook: () => void }) {
   const today = new Date().toISOString().split('T')[0];
   const upcoming = member.schedule
     .filter(s => s.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 5);
+    .slice(0, 4);
+
+  const hasSchedule = upcoming.length > 0;
 
   return (
     <div className="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col gap-4">
@@ -55,7 +402,7 @@ function StaffCard({ member }: { member: PublicStaff }) {
       {/* Schedule */}
       <div className="border-t border-slate-50 pt-4">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Próximos horarios</p>
-        {upcoming.length === 0 ? (
+        {!hasSchedule ? (
           <p className="text-xs text-slate-400">Sin horarios próximos registrados</p>
         ) : (
           <div className="flex flex-col gap-2">
@@ -65,7 +412,7 @@ function StaffCard({ member }: { member: PublicStaff }) {
               return (
                 <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-slate-50 rounded-lg">
                   <span className="text-xs font-semibold text-slate-700 capitalize">{label}</span>
-                  <span className="text-xs text-slate-500">{s.startTime} – {s.endTime}</span>
+                  <span className="text-xs text-slate-500">{fmtTime(s.startTime)} – {fmtTime(s.endTime)}</span>
                 </div>
               );
             })}
@@ -73,6 +420,13 @@ function StaffCard({ member }: { member: PublicStaff }) {
         )}
         <p className="text-xs text-slate-400 mt-2">{formatSchedule(member.schedule)}</p>
       </div>
+
+      <button
+        onClick={onBook}
+        disabled={!hasSchedule}
+        className="mt-auto w-full py-2.5 bg-teal-500 text-white rounded-xl text-sm font-semibold hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+        Reservar cita
+      </button>
     </div>
   );
 }
@@ -81,6 +435,7 @@ function StaffCard({ member }: { member: PublicStaff }) {
 export default function LandingPage() {
   const [staff, setStaff] = useState<PublicStaff[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(true);
+  const [bookingStaff, setBookingStaff] = useState<PublicStaff | null>(null);
 
   useEffect(() => {
     if (!TENANT_ID) { setLoadingStaff(false); return; }
@@ -123,11 +478,9 @@ export default function LandingPage() {
               <span className="text-teal-500">manos expertas</span>
             </h1>
             <p className="text-xl text-slate-600 leading-relaxed mb-10">
-              Conoce a nuestros especialistas y sus horarios de atención.
+              Conoce a nuestros especialistas y reserva tu cita online en segundos.
               Diagnóstico personalizado, tecnología de punta y atención cálida para toda la familia.
             </p>
-
-            {/* Trust badges */}
             <div className="flex flex-wrap gap-6 mt-4 text-sm text-slate-500">
               {[
                 { icon: CheckCircle, text: 'Sin costo la primera consulta' },
@@ -184,10 +537,7 @@ export default function LandingPage() {
 
           {loadingStaff ? (
             <div className="flex items-center justify-center py-16">
-              <div className="text-center">
-                <Loader2 className="w-10 h-10 animate-spin text-teal-500 mx-auto mb-3" />
-                <p className="text-slate-400 text-sm">Cargando equipo...</p>
-              </div>
+              <Loader2 className="w-10 h-10 animate-spin text-teal-500 mx-auto mb-3" />
             </div>
           ) : !TENANT_ID ? (
             <div className="text-center py-16 text-slate-400">
@@ -202,7 +552,7 @@ export default function LandingPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {staff.map(member => (
-                <StaffCard key={member.id} member={member} />
+                <StaffCard key={member.id} member={member} onBook={() => setBookingStaff(member)} />
               ))}
             </div>
           )}
@@ -230,6 +580,11 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* ── Booking Modal ── */}
+      {bookingStaff && (
+        <BookingModal staff={bookingStaff} onClose={() => setBookingStaff(null)} />
+      )}
     </>
   );
 }
