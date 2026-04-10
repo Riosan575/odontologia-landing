@@ -22,16 +22,6 @@ export interface PublicStaff {
   schedule: StaffScheduleDay[];
 }
 
-export interface ConsultaPayload {
-  tenantId: string;
-  fullName: string;
-  dni: string;
-  phone?: string;
-  staffId?: string;
-  isFirstVisit?: boolean;
-  notes?: string;
-}
-
 const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 export function formatSchedule(schedule: StaffScheduleDay[]): string {
@@ -49,7 +39,3 @@ export async function fetchStaff(): Promise<PublicStaff[]> {
   return data.data ?? [];
 }
 
-export async function createConsulta(payload: ConsultaPayload) {
-  const { data } = await client.post('/public/consultas', payload);
-  return data.data;
-}

@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import {
-  Calendar, Clock, Phone, Star, CheckCircle, ArrowRight,
-  X, ChevronDown, Loader2, User, CreditCard, MessageSquare,
-  Smile, Shield, Award,
+  Calendar, Clock, Phone, Star, CheckCircle,
+  Loader2, Shield, Award, Smile,
 } from 'lucide-react';
 import {
-  fetchStaff, createConsulta, formatSchedule,
+  fetchStaff, formatSchedule,
   TENANT_ID, type PublicStaff,
 } from '@/lib/api';
 
@@ -32,216 +31,8 @@ function Avatar({ staff, size = 'md' }: { staff: PublicStaff; size?: 'sm' | 'md'
   );
 }
 
-// ─── Modal ────────────────────────────────────────────────────────────────────
-function BookingModal({
-  staff,
-  preselected,
-  onClose,
-}: {
-  staff: PublicStaff[];
-  preselected: PublicStaff | null;
-  onClose: () => void;
-}) {
-  const [step, setStep] = useState<'form' | 'success'>('form');
-  const [selectedStaff, setSelectedStaff] = useState<PublicStaff | null>(preselected);
-  const [name, setName] = useState('');
-  const [dni, setDni] = useState('');
-  const [phone, setPhone] = useState('');
-  const [reason, setReason] = useState('');
-  const [firstVisit, setFirstVisit] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const inputCls = 'w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all';
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !dni.trim()) return;
-    setLoading(true);
-    setError('');
-    try {
-      await createConsulta({
-        tenantId: TENANT_ID,
-        fullName: name.trim(),
-        dni: dni.trim(),
-        phone: phone.trim() || undefined,
-        staffId: selectedStaff?.id,
-        isFirstVisit: firstVisit,
-        notes: reason.trim() || undefined,
-      });
-      setStep('success');
-    } catch {
-      setError('Ocurrió un error al procesar tu solicitud. Por favor inténtalo de nuevo.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-100">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Reservar consulta</h2>
-            <p className="text-sm text-slate-500 mt-0.5">Sin costo · Confirmamos tu turno</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 transition-colors">
-            <X className="w-5 h-5 text-slate-500" />
-          </button>
-        </div>
-
-        {step === 'success' ? (
-          <div className="p-10 text-center">
-            <div className="w-20 h-20 bg-teal-50 rounded-full flex items-center justify-center mx-auto mb-5">
-              <CheckCircle className="w-10 h-10 text-teal-500" />
-            </div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2">¡Consulta registrada!</h3>
-            <p className="text-slate-500 mb-1">
-              Hola <span className="font-semibold text-slate-700">{name}</span>, tu consulta ha sido registrada exitosamente.
-            </p>
-            {selectedStaff && (
-              <p className="text-sm text-slate-500 mb-6">
-                Te atenderá <span className="font-medium text-teal-600">{selectedStaff.fullName}</span>
-              </p>
-            )}
-            <div className="bg-teal-50 rounded-2xl p-4 text-sm text-teal-700 mb-6">
-              Preséntate en la clínica con tu DNI. El odontólogo te atenderá en orden de llegada.
-            </div>
-            <button
-              onClick={onClose}
-              className="px-6 py-3 bg-teal-500 text-white rounded-xl font-medium hover:bg-teal-600 transition-colors"
-            >
-              Cerrar
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
-
-            {/* Professional selector */}
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Odontólogo de preferencia
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedStaff?.id ?? ''}
-                  onChange={e => setSelectedStaff(staff.find(s => s.id === e.target.value) ?? null)}
-                  className={inputCls + ' appearance-none pr-10'}
-                >
-                  <option value="">Sin preferencia</option>
-                  {staff.map(s => (
-                    <option key={s.id} value={s.id}>{s.fullName}{s.specialization ? ` — ${s.specialization}` : ''}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
-
-              {selectedStaff && (
-                <div className="mt-3 flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                  <Avatar staff={selectedStaff} size="sm" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">{selectedStaff.fullName}</p>
-                    <p className="text-xs text-slate-500">{formatSchedule(selectedStaff.schedule)}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Name */}
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Nombre completo <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  required value={name} onChange={e => setName(e.target.value)}
-                  placeholder="Juan Pérez García"
-                  className={inputCls + ' pl-10'}
-                />
-              </div>
-            </div>
-
-            {/* DNI + Phone */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  DNI <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <CreditCard className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    required value={dni} onChange={e => setDni(e.target.value)}
-                    placeholder="12345678"
-                    className={inputCls + ' pl-10'}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Teléfono</label>
-                <div className="relative">
-                  <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    value={phone} onChange={e => setPhone(e.target.value)}
-                    placeholder="+51 999..."
-                    className={inputCls + ' pl-10'}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Reason */}
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Motivo de la consulta</label>
-              <div className="relative">
-                <MessageSquare className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
-                <textarea
-                  value={reason} onChange={e => setReason(e.target.value)}
-                  rows={2} placeholder="Dolor de muela, revisión general, limpieza..."
-                  className={inputCls + ' pl-10 resize-none'}
-                />
-              </div>
-            </div>
-
-            {/* First visit */}
-            <label className="flex items-center gap-3 p-4 bg-purple-50 rounded-xl border border-purple-100 cursor-pointer">
-              <input
-                type="checkbox" checked={firstVisit} onChange={e => setFirstVisit(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-300 text-purple-600"
-              />
-              <div>
-                <p className="text-sm font-semibold text-purple-800">Primera vez en la clínica</p>
-                <p className="text-xs text-purple-600">Prepararemos tu ficha clínica completa</p>
-              </div>
-            </label>
-
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading || !name.trim() || !dni.trim()}
-              className="w-full flex items-center justify-center gap-2 py-3.5 bg-teal-500 text-white rounded-xl font-semibold text-sm hover:bg-teal-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading
-                ? <><Loader2 className="w-4 h-4 animate-spin" />Procesando...</>
-                : <><Calendar className="w-4 h-4" />Confirmar consulta</>
-              }
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Staff Card ───────────────────────────────────────────────────────────────
-function StaffCard({ member, onBook }: { member: PublicStaff; onBook: (s: PublicStaff) => void }) {
+function StaffCard({ member }: { member: PublicStaff }) {
   const activeDays = member.schedule.filter(d => d.isWorking);
   return (
     <div className="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col gap-4">
@@ -273,16 +64,9 @@ function StaffCard({ member, onBook }: { member: PublicStaff; onBook: (s: Public
               </div>
             ))}
           </div>
+          <p className="text-xs text-slate-400 mt-2">{formatSchedule(member.schedule)}</p>
         </div>
       )}
-
-      <button
-        onClick={() => onBook(member)}
-        className="mt-auto flex items-center justify-center gap-2 py-3 bg-teal-500 text-white rounded-xl text-sm font-semibold hover:bg-teal-600 transition-colors"
-      >
-        <Calendar className="w-4 h-4" />
-        Reservar con {member.fullName.split(' ')[0]}
-      </button>
     </div>
   );
 }
@@ -291,8 +75,6 @@ function StaffCard({ member, onBook }: { member: PublicStaff; onBook: (s: Public
 export default function LandingPage() {
   const [staff, setStaff] = useState<PublicStaff[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [preselected, setPreselected] = useState<PublicStaff | null>(null);
 
   useEffect(() => {
     if (!TENANT_ID) { setLoadingStaff(false); return; }
@@ -301,11 +83,6 @@ export default function LandingPage() {
       .catch(() => {})
       .finally(() => setLoadingStaff(false));
   }, []);
-
-  const openBooking = (member?: PublicStaff) => {
-    setPreselected(member ?? null);
-    setShowModal(true);
-  };
 
   return (
     <>
@@ -323,13 +100,6 @@ export default function LandingPage() {
             <a href="#equipo" className="hover:text-teal-600 transition-colors">Nuestro equipo</a>
             <a href="#contacto" className="hover:text-teal-600 transition-colors">Contacto</a>
           </div>
-          <button
-            onClick={() => openBooking()}
-            className="flex items-center gap-2 px-4 py-2 bg-teal-500 text-white rounded-xl text-sm font-semibold hover:bg-teal-600 transition-colors"
-          >
-            <Calendar className="w-4 h-4" />
-            Reservar
-          </button>
         </div>
       </nav>
 
@@ -347,28 +117,12 @@ export default function LandingPage() {
               <span className="text-teal-500">manos expertas</span>
             </h1>
             <p className="text-xl text-slate-600 leading-relaxed mb-10">
-              Agenda tu consulta con nuestros especialistas. Diagnóstico personalizado,
-              tecnología de punta y atención cálida para toda la familia.
+              Conoce a nuestros especialistas y sus horarios de atención.
+              Diagnóstico personalizado, tecnología de punta y atención cálida para toda la familia.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <button
-                onClick={() => openBooking()}
-                className="flex items-center justify-center gap-2 px-8 py-4 bg-teal-500 text-white rounded-2xl text-base font-bold hover:bg-teal-600 transition-all hover:scale-105 shadow-lg shadow-teal-200"
-              >
-                <Calendar className="w-5 h-5" />
-                Reservar consulta gratis
-                <ArrowRight className="w-4 h-4" />
-              </button>
-              <a
-                href="#equipo"
-                className="flex items-center justify-center gap-2 px-8 py-4 border-2 border-slate-200 text-slate-700 rounded-2xl text-base font-semibold hover:border-teal-300 hover:text-teal-600 transition-colors"
-              >
-                Conocer al equipo
-              </a>
-            </div>
 
             {/* Trust badges */}
-            <div className="flex flex-wrap gap-6 mt-12 text-sm text-slate-500">
+            <div className="flex flex-wrap gap-6 mt-4 text-sm text-slate-500">
               {[
                 { icon: CheckCircle, text: 'Sin costo la primera consulta' },
                 { icon: Clock, text: 'Atención el mismo día' },
@@ -442,42 +196,10 @@ export default function LandingPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {staff.map(member => (
-                <StaffCard key={member.id} member={member} onBook={openBooking} />
+                <StaffCard key={member.id} member={member} />
               ))}
             </div>
           )}
-
-          {staff.length > 0 && (
-            <div className="mt-10 text-center">
-              <button
-                onClick={() => openBooking()}
-                className="inline-flex items-center gap-2 px-8 py-4 bg-teal-500 text-white rounded-2xl font-bold hover:bg-teal-600 transition-all hover:scale-105 shadow-lg shadow-teal-200"
-              >
-                <Calendar className="w-5 h-5" />
-                Reservar mi consulta ahora
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ── CTA strip ── */}
-      <section className="py-16 bg-teal-500">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-3xl font-extrabold text-white mb-4">
-            ¿Listo para tener la sonrisa que mereces?
-          </h2>
-          <p className="text-teal-100 text-lg mb-8">
-            Reserva tu consulta hoy. Sin costo y sin compromiso.
-          </p>
-          <button
-            onClick={() => openBooking()}
-            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-teal-600 rounded-2xl font-bold hover:bg-teal-50 transition-colors text-base"
-          >
-            <Calendar className="w-5 h-5" />
-            Reservar consulta gratis
-            <ArrowRight className="w-4 h-4" />
-          </button>
         </div>
       </section>
 
@@ -494,6 +216,7 @@ export default function LandingPage() {
             <div className="flex flex-wrap gap-6 text-sm">
               <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-teal-400" /><span>+51 999 999 999</span></div>
               <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-teal-400" /><span>Lun – Sáb · 8am – 7pm</span></div>
+              <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-teal-400" /><span>Lunes a Sábado</span></div>
             </div>
           </div>
           <div className="border-t border-slate-800 mt-8 pt-8 text-center text-xs">
@@ -501,15 +224,6 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-
-      {/* ── Booking Modal ── */}
-      {showModal && (
-        <BookingModal
-          staff={staff}
-          preselected={preselected}
-          onClose={() => setShowModal(false)}
-        />
-      )}
     </>
   );
 }
