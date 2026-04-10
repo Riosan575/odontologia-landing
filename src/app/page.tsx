@@ -10,11 +10,6 @@ import {
   TENANT_ID, type PublicStaff,
 } from '@/lib/api';
 
-// ─── Day map ──────────────────────────────────────────────────────────────────
-const DAY_LABELS: Record<number, string> = {
-  0: 'Dom', 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb',
-};
-
 // ─── Staff Avatar ─────────────────────────────────────────────────────────────
 function Avatar({ staff, size = 'md' }: { staff: PublicStaff; size?: 'sm' | 'md' | 'lg' }) {
   const dim = size === 'lg' ? 'w-24 h-24 text-3xl' : size === 'md' ? 'w-16 h-16 text-xl' : 'w-10 h-10 text-sm';
@@ -33,7 +28,12 @@ function Avatar({ staff, size = 'md' }: { staff: PublicStaff; size?: 'sm' | 'md'
 
 // ─── Staff Card ───────────────────────────────────────────────────────────────
 function StaffCard({ member }: { member: PublicStaff }) {
-  const activeDays = member.schedule.filter(d => d.isWorking);
+  const today = new Date().toISOString().split('T')[0];
+  const upcoming = member.schedule
+    .filter(s => s.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 5);
+
   return (
     <div className="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col gap-4">
       <div className="flex items-start gap-4">
@@ -53,20 +53,26 @@ function StaffCard({ member }: { member: PublicStaff }) {
       )}
 
       {/* Schedule */}
-      {activeDays.length > 0 && (
-        <div className="border-t border-slate-50 pt-4">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Horario de atención</p>
-          <div className="flex flex-wrap gap-2">
-            {activeDays.map(d => (
-              <div key={d.dayOfWeek} className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 rounded-lg">
-                <span className="text-xs font-semibold text-slate-700">{DAY_LABELS[d.dayOfWeek]}</span>
-                <span className="text-xs text-slate-400">{d.startTime}–{d.endTime}</span>
-              </div>
-            ))}
+      <div className="border-t border-slate-50 pt-4">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Próximos horarios</p>
+        {upcoming.length === 0 ? (
+          <p className="text-xs text-slate-400">Sin horarios próximos registrados</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {upcoming.map((s, i) => {
+              const d = new Date(s.date + 'T12:00:00');
+              const label = d.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short' });
+              return (
+                <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-slate-50 rounded-lg">
+                  <span className="text-xs font-semibold text-slate-700 capitalize">{label}</span>
+                  <span className="text-xs text-slate-500">{s.startTime} – {s.endTime}</span>
+                </div>
+              );
+            })}
           </div>
-          <p className="text-xs text-slate-400 mt-2">{formatSchedule(member.schedule)}</p>
-        </div>
-      )}
+        )}
+        <p className="text-xs text-slate-400 mt-2">{formatSchedule(member.schedule)}</p>
+      </div>
     </div>
   );
 }

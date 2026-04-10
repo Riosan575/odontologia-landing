@@ -5,11 +5,10 @@ export const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID ?? '';
 
 const client = axios.create({ baseURL: API_URL });
 
-export interface StaffScheduleDay {
-  dayOfWeek: number;   // 0=Sun … 6=Sat
-  startTime: string;   // "09:00"
-  endTime: string;     // "18:00"
-  isWorking: boolean;  // backend field name from WorkingHoursEntity
+export interface StaffScheduleSlot {
+  date: string;      // "YYYY-MM-DD"
+  startTime: string; // "HH:MM"
+  endTime: string;   // "HH:MM"
 }
 
 export interface PublicStaff {
@@ -19,17 +18,19 @@ export interface PublicStaff {
   bio: string;
   avatar: string;
   color: string;
-  schedule: StaffScheduleDay[];
+  schedule: StaffScheduleSlot[];
 }
 
-const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-
-export function formatSchedule(schedule: StaffScheduleDay[]): string {
-  const active = schedule.filter(d => d.isWorking);
-  if (!active.length) return 'Sin horario';
-  const days = active.map(d => DAY_NAMES[d.dayOfWeek]).join(', ');
-  const first = active[0];
-  return `${days} · ${first.startTime} – ${first.endTime}`;
+export function formatSchedule(schedule: StaffScheduleSlot[]): string {
+  if (!schedule.length) return 'Sin horario registrado';
+  // Show next upcoming date
+  const today = new Date().toISOString().split('T')[0];
+  const upcoming = schedule.filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+  if (!upcoming.length) return 'Sin próximos horarios';
+  const next = upcoming[0];
+  const d = new Date(next.date + 'T12:00:00');
+  const label = d.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short' });
+  return `Próx. ${label} · ${next.startTime} – ${next.endTime}`;
 }
 
 export async function fetchStaff(): Promise<PublicStaff[]> {
@@ -38,4 +39,3 @@ export async function fetchStaff(): Promise<PublicStaff[]> {
   });
   return data.data ?? [];
 }
-
