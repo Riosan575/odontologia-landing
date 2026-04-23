@@ -1,1 +1,70 @@
 @import "tailwindcss";
+
+@theme {
+  --color-bone-50: #f6f4ee;
+  --color-bone-100: #edeade;
+  --color-bone-200: #dbd4bd;
+  --color-bone-300: #c9bf9c;
+  --color-bone-400: #b8a97a;
+  --color-bone-500: #a69459;
+  --color-bone-600: #857647;
+  --color-bone-700: #635936;
+  --color-bone-800: #423b24;
+  --color-bone-900: #211e12;
+  --color-bone-950: #17150c;
+
+  --color-khaki-50: #f5f3f0;
+  --color-khaki-100: #eae6e1;
+  --color-khaki-200: #d6cdc2;
+  --color-khaki-300: #c1b4a4;
+  --color-khaki-400: #ac9c86;
+  --color-khaki-500: #988367;
+  --color-khaki-600: #796953;
+  --color-khaki-700: #5b4e3e;
+  --color-khaki-800: #3d3429;
+  --color-khaki-900: #1e1a15;
+  --color-khaki-950: #15120e;
+
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-serif);
+}
+
+.nav-scrolled {
+  background: rgba(246,244,238,0.96);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 1px 20px rgba(33,30,18,0.08);
+}
+
+.card-hover {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 48px rgba(99,89,54,0.13);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #a69459;
+  box-shadow: 0 0 0 3px rgba(166,148,89,0.15);
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}

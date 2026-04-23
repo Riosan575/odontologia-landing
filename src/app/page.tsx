@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import {
   fetchStaff, fetchStaffServices, fetchAvailability, createBooking,
-  formatSchedule, fmtTime,
+  fmtTime,
   TENANT_ID,
   type PublicStaff, type PublicService, type AvailabilitySlot,
 } from '@/lib/api';
@@ -50,7 +50,7 @@ interface BookingState {
   notes: string;
 }
 
-function BookingModal({ staff, onClose }: { staff: PublicStaff; onClose: () => void }) {
+function BookingModal({ staff, onClose, initialDate }: { staff: PublicStaff; onClose: () => void; initialDate?: string }) {
   const [step, setStep] = useState<Step>('service');
   const [services, setServices] = useState<PublicService[]>([]);
   const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
@@ -68,7 +68,7 @@ function BookingModal({ staff, onClose }: { staff: PublicStaff; onClose: () => v
     .filter(d => d >= today).sort();
 
   const [booking, setBooking] = useState<BookingState>({
-    service: null, date: availableDates[0] ?? today,
+    service: null, date: initialDate || availableDates[0] || today,
     slot: null, name: '', dni: '', phone: '', email: '', notes: '',
   });
 
@@ -102,7 +102,7 @@ function BookingModal({ staff, onClose }: { staff: PublicStaff; onClose: () => v
 
   const selectService = (svc: PublicService) => {
     setBooking(b => ({ ...b, service: svc, slot: null }));
-    setStep('date');
+    setStep(initialDate ? 'time' : 'date');
   };
 
   const selectDate = (date: string) => {
@@ -152,7 +152,11 @@ function BookingModal({ staff, onClose }: { staff: PublicStaff; onClose: () => v
   };
 
   const stepBack: Record<Step, Step | null> = {
-    service: null, date: 'service', time: 'date', form: 'time', confirm: null,
+    service: null,
+    date: 'service',
+    time: initialDate ? 'service' : 'date',
+    form: 'time',
+    confirm: null,
   };
 
   return (
@@ -208,7 +212,14 @@ function BookingModal({ staff, onClose }: { staff: PublicStaff; onClose: () => v
           {!done && step === 'service' && (
             <div>
               <h3 className="font-bold text-slate-900 text-lg mb-1">¿Qué servicio necesitas?</h3>
-              <p className="text-sm text-slate-500 mb-4">Selecciona el tratamiento</p>
+              {initialDate ? (
+                <p className="text-sm text-teal-600 mb-4 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4" />
+                  <span className="capitalize">{dateLabel(initialDate)}</span>
+                </p>
+              ) : (
+                <p className="text-sm text-slate-500 mb-4">Selecciona el tratamiento</p>
+              )}
               {loadingSvc ? (
                 <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-teal-500" /></div>
               ) : services.length === 0 ? (
@@ -371,15 +382,105 @@ function BookingModal({ staff, onClose }: { staff: PublicStaff; onClose: () => v
   );
 }
 
-// ─── Staff Card ───────────────────────────────────────────────────────────────
-function StaffCard({ member, onBook }: { member: PublicStaff; onBook: () => void }) {
-  const today = new Date().toISOString().split('T')[0];
-  const upcoming = member.schedule
-    .filter(s => s.date >= today)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 4);
+// ─── Calendar Modal ────────────────────────────────────────────────────────────
+function CalendarModal({ staff, onSelectDate, onClose }: {
+  staff: PublicStaff;
+  onSelectDate: (date: string) => void;
+  onClose: () => void;
+}) {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
 
-  const hasSchedule = upcoming.length > 0;
+  const availableDateSet = new Set(
+    staff.schedule.filter(s => s.date >= todayStr).map(s => s.date)
+  );
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay();
+  const monthLabel = new Date(year, month, 1).toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+
+  const prev = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
+  const next = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
+
+  const cells: (null | { day: number; dateStr: string; available: boolean })[] = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    cells.push({ day: d, dateStr, available: availableDateSet.has(dateStr) });
+  }
+
+  const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full sm:rounded-2xl sm:max-w-md max-h-[95vh] flex flex-col">
+        <div className="flex items-center gap-3 p-5 border-b border-slate-100 flex-shrink-0">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <Avatar staff={staff} size="sm" />
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-900 text-sm truncate">{staff.fullName}</p>
+              <p className="text-xs text-slate-500">Selecciona una fecha disponible</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg flex-shrink-0">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <button onClick={prev} className="p-2 hover:bg-slate-100 rounded-lg">
+              <ChevronLeft className="w-4 h-4 text-slate-600" />
+            </button>
+            <span className="font-semibold text-slate-900 capitalize">{monthLabel}</span>
+            <button onClick={next} className="p-2 hover:bg-slate-100 rounded-lg">
+              <ChevronLeft className="w-4 h-4 text-slate-600 rotate-180" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 mb-2">
+            {dayNames.map(d => (
+              <div key={d} className="text-center text-xs font-medium text-slate-400 py-1">{d}</div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((cell, i) => {
+              if (!cell) return <div key={`e${i}`} className="aspect-square" />;
+              const isPast = cell.dateStr < todayStr;
+              const canSelect = cell.available && !isPast;
+              return (
+                <button
+                  key={cell.dateStr}
+                  disabled={!canSelect}
+                  onClick={() => onSelectDate(cell.dateStr)}
+                  className={`aspect-square flex items-center justify-center rounded-xl text-sm font-medium transition-all ${
+                    canSelect
+                      ? 'text-white bg-teal-500 shadow-sm hover:bg-teal-600 font-bold'
+                      : 'text-slate-300 cursor-default'
+                  }`}
+                >
+                  {cell.day}
+                </button>
+              );
+            })}
+          </div>
+
+          {availableDateSet.size === 0 && (
+            <p className="text-sm text-slate-400 text-center py-6 mt-2">Sin fechas disponibles próximamente</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Staff Card ───────────────────────────────────────────────────────────────
+function StaffCard({ member, onViewCalendar }: { member: PublicStaff; onViewCalendar: () => void }) {
+  const today = new Date().toISOString().split('T')[0];
+  const hasSchedule = member.schedule.some(s => s.date >= today);
 
   return (
     <div className="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col gap-4">
@@ -399,33 +500,12 @@ function StaffCard({ member, onBook }: { member: PublicStaff; onBook: () => void
         <p className="text-sm text-slate-500 leading-relaxed line-clamp-3">{member.bio}</p>
       )}
 
-      {/* Schedule */}
-      <div className="border-t border-slate-50 pt-4">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Próximos horarios</p>
-        {!hasSchedule ? (
-          <p className="text-xs text-slate-400">Sin horarios próximos registrados</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {upcoming.map((s, i) => {
-              const d = new Date(s.date + 'T12:00:00');
-              const label = d.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short' });
-              return (
-                <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-slate-50 rounded-lg">
-                  <span className="text-xs font-semibold text-slate-700 capitalize">{label}</span>
-                  <span className="text-xs text-slate-500">{fmtTime(s.startTime)} – {fmtTime(s.endTime)}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <p className="text-xs text-slate-400 mt-2">{formatSchedule(member.schedule)}</p>
-      </div>
-
       <button
-        onClick={onBook}
+        onClick={onViewCalendar}
         disabled={!hasSchedule}
-        className="mt-auto w-full py-2.5 bg-teal-500 text-white rounded-xl text-sm font-semibold hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-        Reservar cita
+        className="mt-auto w-full py-3 bg-teal-500 text-white rounded-xl font-semibold hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2">
+        <Calendar className="w-5 h-5" />
+        Ver disponibilidad
       </button>
     </div>
   );
@@ -435,7 +515,9 @@ function StaffCard({ member, onBook }: { member: PublicStaff; onBook: () => void
 export default function LandingPage() {
   const [staff, setStaff] = useState<PublicStaff[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(true);
+  const [calendarStaff, setCalendarStaff] = useState<PublicStaff | null>(null);
   const [bookingStaff, setBookingStaff] = useState<PublicStaff | null>(null);
+  const [selectedDate, setSelectedDate] = useState('');
 
   useEffect(() => {
     if (!TENANT_ID) { setLoadingStaff(false); return; }
@@ -552,7 +634,7 @@ export default function LandingPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {staff.map(member => (
-                <StaffCard key={member.id} member={member} onBook={() => setBookingStaff(member)} />
+                <StaffCard key={member.id} member={member} onViewCalendar={() => setCalendarStaff(member)} />
               ))}
             </div>
           )}
@@ -581,9 +663,26 @@ export default function LandingPage() {
         </div>
       </footer>
 
+      {/* ── Calendar Modal ── */}
+      {calendarStaff && (
+        <CalendarModal
+          staff={calendarStaff}
+          onSelectDate={(date) => {
+            setSelectedDate(date);
+            setCalendarStaff(null);
+            setBookingStaff(calendarStaff);
+          }}
+          onClose={() => setCalendarStaff(null)}
+        />
+      )}
+
       {/* ── Booking Modal ── */}
       {bookingStaff && (
-        <BookingModal staff={bookingStaff} onClose={() => setBookingStaff(null)} />
+        <BookingModal
+          staff={bookingStaff}
+          initialDate={selectedDate || undefined}
+          onClose={() => { setBookingStaff(null); setSelectedDate(''); }}
+        />
       )}
     </>
   );
