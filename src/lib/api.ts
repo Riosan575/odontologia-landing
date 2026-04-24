@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
 export const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID ?? '';
 
 const client = axios.create({ baseURL: API_URL });
@@ -42,10 +42,11 @@ export interface BookingDto {
   serviceId: string;
   date: string;
   startTime: string;
-  customerName: string;
-  customerDni: string;
-  customerPhone: string;
-  customerEmail?: string;
+  firstName: string;
+  lastName: string;
+  dni?: string;
+  phone: string;
+  email?: string;
   notes?: string;
 }
 
