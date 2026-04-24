@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { Calendar, ChevronLeft, X, Check, Loader2, Award } from 'lucide-react';
+import { PhoneInput } from '@/components/PhoneInput';
 import {
   fetchStaff, fetchStaffServices, fetchAvailability, createBooking,
   fmtTime, TENANT_ID,
@@ -125,10 +126,10 @@ function BookingModal({ staff, onClose, initialDate }: { staff: PublicStaff; onC
   const selectSlot = (slot: AvailabilitySlot) => { setBooking(b => ({ ...b, slot })); setSlotTaken(false); setStep('form'); };
 
   const handleSubmit = async () => {
-    if (!booking.service || !booking.slot || !booking.firstName || !booking.lastName || !booking.phone) return;
+    if (!booking.service || !booking.slot || !booking.firstName || !booking.lastName || !booking.phone || !booking.dni) return;
     setSubmitting(true); setError('');
     try {
-      await createBooking({ staffId: staff.id, serviceId: booking.service.id, date: booking.date, startTime: booking.slot.startTime, firstName: booking.firstName, lastName: booking.lastName, dni: booking.dni || undefined, phone: booking.phone, email: booking.email || undefined, notes: booking.notes || undefined });
+      await createBooking({ staffId: staff.id, serviceId: booking.service.id, date: booking.date, startTime: booking.slot.startTime, firstName: booking.firstName, lastName: booking.lastName, dni: booking.dni, phone: booking.phone, email: booking.email || undefined, notes: booking.notes || undefined });
       setDone(true);
     } catch (e: any) {
       const msg: string = e?.response?.data?.message ?? '';
@@ -312,12 +313,12 @@ function BookingModal({ staff, onClose, initialDate }: { staff: PublicStaff; onC
                   ))}
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-khaki-500 mb-1.5">DNI <span className="font-normal text-khaki-400">(opcional)</span></label>
+                  <label className="block text-xs font-semibold text-khaki-500 mb-1.5">DNI *</label>
                   <input type="text" value={booking.dni} maxLength={8} onChange={e => setBooking(b => ({ ...b, dni: e.target.value.replace(/\D/g, '') }))} placeholder="12345678" className="w-full border border-bone-200 rounded-xl px-3.5 py-3 text-sm bg-white text-khaki-900" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-khaki-500 mb-1.5">WhatsApp *</label>
-                  <input type="tel" value={booking.phone} onChange={e => setBooking(b => ({ ...b, phone: e.target.value }))} placeholder="+51 999 999 999" className="w-full border border-bone-200 rounded-xl px-3.5 py-3 text-sm bg-white text-khaki-900" />
+                  <PhoneInput value={booking.phone} onChange={v => setBooking(b => ({ ...b, phone: v }))} />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-khaki-500 mb-1.5">Correo <span className="font-normal text-khaki-400">(opcional)</span></label>
@@ -331,7 +332,7 @@ function BookingModal({ staff, onClose, initialDate }: { staff: PublicStaff; onC
 
         {!done && step === 'form' && (
           <div className="px-5 sm:px-6 py-4 border-t border-bone-100 flex-shrink-0">
-            <button onClick={handleSubmit} disabled={submitting || !booking.firstName || !booking.lastName || !booking.phone}
+            <button onClick={handleSubmit} disabled={submitting || !booking.firstName || !booking.lastName || !booking.phone || !booking.dni}
               className="w-full py-4 bg-bone-500 text-white rounded-2xl font-semibold hover:bg-bone-600 disabled:opacity-40 transition-all flex items-center justify-center gap-2 text-base active:scale-[0.99]">
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
               {submitting ? 'Enviando...' : 'Confirmar solicitud'}
